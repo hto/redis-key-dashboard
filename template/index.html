@@ -1,0 +1,374 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    
+    <title>Redis Key Dashboard - github.com/hto</title>
+
+    <link rel="icon" href="/assets/favicon.ico">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <style>
+        html {
+            font-size: 14px;
+        }
+        @media (min-width: 768px) {
+        html {
+            font-size: 16px;
+        }
+        }
+
+        .container {
+        max-width: 960px;
+        }
+
+        .pricing-header {
+        max-width: 700px;
+        }
+
+        .card-deck .card {
+        min-width: 220px;
+        }
+
+        .border-top { border-top: 1px solid #e5e5e5; }
+        .border-bottom { border-bottom: 1px solid #e5e5e5; }
+
+        .box-shadow { box-shadow: 0 .25rem .75rem rgba(0, 0, 0, .05); }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@2.8.0"></script>
+</head>
+
+<body>
+
+    <div class="d-flex flex-column flex-md-row align-items-center p-3 px-md-4 mb-3 bg-white border-bottom box-shadow">
+        <h5 class="my-0 mr-md-auto font-weight-normal" style="width: 100%; text-align: center">Redis Key Dashboard - github.com/hto</h5>
+        <a class="btn btn-outline-primary" target="_blank" title="redis key monitor document" href="https://github.com/hto/redis-key-dashboard/wiki">Docs</a>
+    </div>
+
+    <div class="pricing-header px-3 py-3 pb-md-4 mx-auto text-center" {{if (ne .status "idle") }} style="display: none;" {{end}}>
+        <h1 class="display-5">Hello!</h1>
+        <p class="lead">
+            This tool allows you to do a small analysis of the amount of keys and memory you use in Redis. It allows you to see overlooked keys and notice overuse.
+            <br /> Please read the <a class="btn-outline-primary" target="_blank" title="redis key monitor" href="https://github.com/hto/redis-key-dashboard/wiki">README.md</a> document before starting.
+        </p>
+    </div>
+
+    <div class="container">
+        {{if or (eq .status "idle") (eq .status "fail") }}
+        <div class="card-deck mb-3">
+            <div class="card mb-4 box-shadow">
+                <div class="card-header">
+                    <h5 class="my-0 font-weight-normal">Analysis Options</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-row">
+                        <div class="form-group col-md-8">
+                            <label>Redis Address *</label>
+                            <input type="text" class="form-control" id="serveraddress" value="localhost:6379" />
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label>Redis Password <small>(Default empty)</small></label>
+                            <input type="password" class="form-control" id="password">
+                        </div>
+                    </div>
+        
+                    <div class="form-row">
+                        <div class="form-group col-md-3">
+                            <label>Scan Patern *</label>
+                            <input type="text" class="form-control" id="pattern" value="*" />
+                        </div>
+                        <div class="form-group col-md-2">
+                            <label>Group the keys ?</label>
+                            <select id="groupkey" class="form-control">
+                                <option selected value="yes">Yes</option>
+                                <option value="no">No</option>
+                            </select>
+                        </div>
+                        <div class="form-group col-md-4">
+                            <label>Key Delimiters <small>(With Group key? YES)</small></label>
+                            <input type="text" class="form-control" id="delimiters" placeholder="" />
+                        </div>
+                        <div class="form-group col-md-3">
+                            <label>Memory Analysis ? <small>(slow)</small></label>
+                            <select id="memoryusage" class="form-control">
+                                <option value="yes">Yes</option>
+                                <option selected value="no">No</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-lg btn-block btn-info" onclick="setWorker()">Get started</button>
+                </div>
+            </div>
+        </div>
+        {{end}}
+
+        {{ if (eq .status "fail") }}
+        <div class="card-deck mb-3" style="display: block;">
+            <p class="alert alert-danger">
+                {{ .scanErrMsg }}
+                {{ .status }}
+            </p>
+        </div>
+        {{ end }}
+
+        {{if or (eq .status "process") (eq .status "ready") }}
+        <div id="result">
+            {{if (eq .status "ready") }}
+            <div class="card-deck mb-3" style="display: block;">
+                <button type="button" class="btn btn-outline-success" onclick="resetWorker()">New Analysis</button>
+                <a type="button" class="btn btn-info" style="float: right;" href="/api/csv-export" target="_blank">Export All Keys Report to CSV</a>
+            </div>
+            {{end}}
+            <div class="card-deck mb-3">
+                <div class="card" style="width: 18rem;">
+                    <div class="card-body">
+                        <h4 class="card-title">Redis Total Memory</h4>
+                        <h3 class="card-subtitle mb-2 text-muted">{{ .redisInfo.TotalMemory | formatMb }}</h3>
+                    </div>
+                </div>
+                <div class="card" style="width: 18rem;">
+                    <div class="card-body">
+                        <h4 class="card-title">Redis Total Key Count</h4>
+                        <h3 class="card-subtitle mb-2 text-muted">{{ .redisInfo.TotalKeyCount }}</h3>
+                    </div>
+                </div>
+                <div class="card" style="width: 18rem;">
+                    <div class="card-body">
+                        <h4 class="card-title">Scan Processing Time</h4>
+                        <h3 class="card-subtitle mb-2 text-muted">
+                            <span id="timer"></span> 
+                            {{if (eq .status "ready") }}
+                            <small class="d-inline p-2 bg-success text-white" style="font-size: 16px;">Finished</small>
+                            {{end}}
+                        </h3>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-light bg-gradient">
+                <canvas id="barChart" width="400" height="100" aria-label="Hello ARIA World" role="img"></canvas>
+            </div>
+
+            <div class="bg-light bg-gradient">
+                <h4><span class="badge badge-secondary">Top 25 Keys</span></h4>
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th scope="col">#</th>
+                            <th scope="col">Key</th>
+                            <th scope="col">Count</th>
+                            <th scope="col">Memory Size</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{if or (and (.scanConfReq.GroupKey) (not .scanConfReq.MemoryUsage)) (and (not .scanConfReq.GroupKey) (not .scanConfReq.MemoryUsage)) }}
+                            {{ range $i, $e := .sortedReportListByCount }}
+                            <tr>
+                                <th scope="row">{{$i | indexView }}</th>
+                                <td>{{ .Key }}</td>
+                                <td>{{ .Count }}</td>
+                                <td>
+                                    {{ if gt .Size 0 }} {{ .Size | formatMb }} {{else}} - {{end}}
+                                </td>
+                            </tr>
+                            {{ end }}
+                        {{ end }}
+
+                        {{if .scanConfReq.MemoryUsage }}
+                            {{ range $i, $e := .sortedReportListBySize }}
+                            <tr>
+                                <th scope="row">{{$i | indexView }}</th>
+                                <td>{{ .Key }}</td>
+                                <td>{{ .Count }}</td>
+                                <td>{{ .Size | formatMb }}</td>
+                            </tr>
+                            {{ end }}
+                        {{ end }}
+
+                        {{ if eq .status "process" }}
+                        <tr>
+                            <td colspan="4" class="text-center">Processing..</td>
+                        </tr>
+                        {{ end }}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {{end}}
+
+        {{ if or (eq .status "worker") (eq .status "process") }}
+            <h3 class="text-center">Processing..</h3>
+        {{ end }}
+
+        <footer class="pt-4 my-md-5 pt-md-5 border-top">
+            <div class="row">
+                <div class="col-12 col-md text-center">
+                    Halil Tuğcan Özaktaş - 
+                    <span class="mb-3 text-muted">
+                        <a target="_blank" href="https://github.com/hto">github.com/hto</a>
+                    </span>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script>
+        {{if or (eq .status "process") (eq .status "ready") }}
+        var ctxB = document.getElementById("barChart").getContext('2d');
+        var myBarChart = new Chart(ctxB, {
+            type: 'bar',
+            data: {
+            {{if or (and (.scanConfReq.GroupKey) (not .scanConfReq.MemoryUsage)) (and (not .scanConfReq.GroupKey) (not .scanConfReq.MemoryUsage)) }}
+            labels: [{{ range .sortedReportListByCount }} "{{.Key}}", {{end}}],
+            {{else}}
+            labels: [{{ range .sortedReportListBySize }} "{{.Key}}", {{end}}],
+            {{end}}
+            datasets: [{
+            label: '',
+            {{if or (and (.scanConfReq.GroupKey) (not .scanConfReq.MemoryUsage)) (and (not .scanConfReq.GroupKey) (not .scanConfReq.MemoryUsage)) }}
+            data: [{{ range .sortedReportListByCount }} {{ .Count }}, {{end}}],
+            {{else}}
+            data: [{{ range .sortedReportListBySize }} {{ .Size|formatMbRaw }}, {{end}}],
+            {{end}}
+            backgroundColor: [
+                'rgba(255, 99, 132, 0.2)',
+                'rgba(54, 162, 235, 0.2)',
+                'rgba(255, 206, 86, 0.2)',
+                'rgba(75, 192, 192, 0.2)',
+                'rgba(153, 102, 255, 0.2)',
+                'rgba(255, 159, 64, 0.2)',
+                'rgba(255, 99, 132, 0.2)',
+                'rgba(54, 162, 235, 0.2)',
+                'rgba(255, 206, 86, 0.2)',
+                'rgba(75, 192, 192, 0.2)',
+                'rgba(153, 102, 255, 0.2)',
+                'rgba(255, 159, 64, 0.2)',
+                'rgba(255, 99, 132, 0.2)',
+                'rgba(54, 162, 235, 0.2)',
+                'rgba(255, 206, 86, 0.2)',
+                'rgba(75, 192, 192, 0.2)',
+                'rgba(153, 102, 255, 0.2)',
+                'rgba(255, 159, 64, 0.2)',
+                'rgba(255, 99, 132, 0.2)',
+                'rgba(54, 162, 235, 0.2)',
+                'rgba(255, 206, 86, 0.2)',
+                'rgba(75, 192, 192, 0.2)',
+                'rgba(153, 102, 255, 0.2)',
+                'rgba(255, 159, 64, 0.2)',
+                'rgba(255, 159, 64, 0.2)'
+            ],
+            borderColor: [
+                'rgba(255,99,132,1)',
+                'rgba(54, 162, 235, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(75, 192, 192, 1)',
+                'rgba(153, 102, 255, 1)',
+                'rgba(255, 159, 64, 1)',
+                'rgba(255,99,132,1)',
+                'rgba(54, 162, 235, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(75, 192, 192, 1)',
+                'rgba(153, 102, 255, 1)',
+                'rgba(255, 159, 64, 1)',
+                'rgba(255,99,132,1)',
+                'rgba(54, 162, 235, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(75, 192, 192, 1)',
+                'rgba(153, 102, 255, 1)',
+                'rgba(255, 159, 64, 1)',
+                'rgba(255,99,132,1)',
+                'rgba(54, 162, 235, 1)',
+                'rgba(255, 206, 86, 1)',
+                'rgba(75, 192, 192, 1)',
+                'rgba(153, 102, 255, 1)',
+                'rgba(255, 159, 64, 1)',
+                'rgba(255, 159, 64, 1)'
+            ],
+                borderWidth: 1
+            }]
+            },
+            options: {
+                scales: {
+                    yAxes: [{
+                        ticks: {
+                            beginAtZero: true
+                        }
+                    }]
+                }
+            }
+        });
+        {{end}}
+
+        
+        var toHHMMSS = (secs) => {
+            var secs = secs < 1 ? 1 : secs;
+            var sec_num = parseInt(secs, 10)
+            var hours   = Math.floor(sec_num / 3600)
+            var minutes = Math.floor(sec_num / 60) % 60
+            var seconds = sec_num % 60
+
+            return [hours,minutes,seconds]
+                .map(v => v < 10 ? "0" + v : v)
+                .filter((v,i) => v !== "00" || i > 0)
+                .join(":")
+        }
+
+        {{if (eq .status "ready") }}
+            document.getElementById("timer").innerHTML = toHHMMSS({{ .workerTime }});
+        {{ end }}
+
+        {{if or (eq .status "process") (eq .status "worker") }}
+        var timer = parseInt({{ .workerTime }}, 10);
+        setInterval(function(){ 
+            document.getElementById("timer").innerHTML = toHHMMSS(timer);
+            timer++;
+        }, 1000);
+
+        setInterval(function(){ 
+            $.post('/api/check-status', function(data, status){
+                console.log(status);
+                console.log(data);
+                console.log(data.status);
+                if (data.status == "ready" || data.status == "fail") {
+                    location.reload();
+                }
+            });
+        }, 1000);
+        {{end}}
+
+        {{if or (eq .status "idle") (eq .status "fail") }}
+        function setWorker(){
+
+            if ($("#groupkey").val() == 'yes' && $("#delimiters").val().length < 1 ) {
+                alert("If 'Group the keys' is selected yes, you have to enter 'Key Delimiters'. Add ',' after each entered character.\nExample '_,'\nIt allows you to group your keys such as 'user_data, user_config' as user_ *.");
+                return;
+            }
+            
+            $.post('/api/worker', {
+                "serveraddress": $("#serveraddress").val(),
+                "password": $("#password").val(),
+                "pattern": $("#pattern").val(),
+                "groupkey": ($("#groupkey").val() == 'yes') ? true : false,
+                "memoryusage": ($("#memoryusage").val() == 'yes') ? true : false,
+                "delimiters": $("#delimiters").val(),
+            }, function(data, status){
+                location.reload();
+            })
+            .fail(function(xhr, status, error) {
+                alert("Invalid form values");
+            });
+        }
+        {{end}}
+
+        function resetWorker(){
+            $.post('/api/reset-worker', function(data, status){
+                location.reload();
+            });
+        }
+
+    </script>
+
+  </body>
+</html>
