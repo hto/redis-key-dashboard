@@ -2,7 +2,7 @@
 
 > This tool allows you to do a small analysis of the amount of keys and memory you use in Redis. It allows you to see overlooked keys and notice overuse.
 
-> **Please read the [Wiki](https://eff.org) document before starting.**
+> **Please read the [Wiki](https://github.com/hto/redis-key-dashboard/wiki) document before starting.**
 
 _________________
 
