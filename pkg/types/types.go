@@ -2,13 +2,17 @@ package types
 
 import "time"
 
-const StatusIdle = "idle"
-const StatusWorker = "worker"
-const StatusProcess = "process"
-const StatusFail = "fail"
-const StatusReady = "ready"
+type Status string
 
-var ScanStatus string
+const (
+	StatusIdle    Status = "idle"
+	StatusWorker  Status = "worker"
+	StatusProcess Status = "process"
+	StatusFail    Status = "fail"
+	StatusReady   Status = "ready"
+)
+
+var ScanStatus Status
 var ScanErrMsg string
 var RedisInfo RedisInfoStruct
 var ScanConfReq ScanConfReqStruct
