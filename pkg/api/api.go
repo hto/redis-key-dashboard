@@ -5,7 +5,7 @@ import (
 	"encoding/csv"
 	"log"
 	"net/http"
-	"redis-key-dashboard/types"
+	"redis-key-dashboard/pkg/types"
 	"strconv"
 	"time"
 
@@ -14,7 +14,6 @@ import (
 )
 
 func MainHandler(c *gin.Context) {
-
 	var workerTime float64
 	if types.RedisInfo.EndTime.IsZero() {
 		workerTime = time.Now().Sub(types.RedisInfo.StartTime).Seconds()
@@ -47,42 +46,26 @@ func MainHandler(c *gin.Context) {
 }
 
 func ResetWorkerHandler(c *gin.Context) {
-
-	var redisInfo types.RedisInfoStruct
-	var scanConfReq types.ScanConfReqStruct
-	var sortedReportListByCount types.SortByCount
-	var sortedReportListBySize types.SortBySize
-
 	types.ScanStatus = types.StatusIdle
 	types.ScanErrMsg = ""
-	types.RedisInfo = redisInfo
-	types.ScanConfReq = scanConfReq
-	types.SortedReportListByCount = sortedReportListByCount
-	types.SortedReportListBySize = sortedReportListBySize
+	types.RedisInfo = types.RedisInfoStruct{}
+	types.ScanConfReq = types.ScanConfReqStruct{}
+	types.SortedReportListByCount = types.SortByCount{}
+	types.SortedReportListBySize = types.SortBySize{}
 }
 
 func WorkerHandler(c *gin.Context) {
-
 	if err := c.ShouldBindWith(&types.ScanConfReq, binding.Form); err != nil {
-		c.JSON(401, gin.H{
-			"message":  "Invalid Form",
-			"response": "err",
-		})
-		c.Abort()
+		c.JSON(401, gin.H{"message": "Invalid Form", "response": "err"})
 		return
 	}
 
 	types.ScanStatus = types.StatusWorker
-
-	c.JSON(200, gin.H{
-		"response": "success",
-	})
+	c.JSON(200, gin.H{"response": "success"})
 }
 
 func CheckStatusHandler(c *gin.Context) {
-	c.JSON(200, gin.H{
-		"status": types.ScanStatus,
-	})
+	c.JSON(200, gin.H{"status": types.ScanStatus})
 }
 
 func CsvExportHandler(c *gin.Context) {
@@ -96,23 +79,14 @@ func CsvExportHandler(c *gin.Context) {
 		log.Fatalln("error writing record to csv:", err)
 	}
 
-	if (types.ScanConfReq.GroupKey && !types.ScanConfReq.MemoryUsage) || (!types.ScanConfReq.GroupKey && !types.ScanConfReq.MemoryUsage) {
-		for _, csvLineData := range types.SortedReportListByCount {
-			w.Write([]string{
-				csvLineData.Key,
-				strconv.FormatInt(csvLineData.Count, 10),
-				"-",
-			})
+	isMemoryUsage := types.ScanConfReq.MemoryUsage
+	if !isMemoryUsage {
+		for _, d := range types.SortedReportListByCount {
+			w.Write([]string{d.Key, strconv.FormatInt(d.Count, 10), "-"})
 		}
-	}
-
-	if types.ScanConfReq.MemoryUsage {
-		for _, csvLineData := range types.SortedReportListBySize {
-			w.Write([]string{
-				csvLineData.Key,
-				strconv.FormatInt(csvLineData.Count, 10),
-				strconv.FormatInt(csvLineData.Size, 10),
-			})
+	} else {
+		for _, d := range types.SortedReportListBySize {
+			w.Write([]string{d.Key, strconv.FormatInt(d.Count, 10), strconv.FormatInt(d.Size, 10)})
 		}
 	}
 	w.Flush()
